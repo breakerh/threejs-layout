@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Layout check</title>
+<!-- Standalone layout harness. Drop this next to your scene modules and open it
+     over HTTP (ES module imports don't work from file://).
+
+     Two ways to point it at a scene:
+
+     1. Query params, no setup:
+        layout-check.html?module=./house-builder.js&export=buildPiazzaMercato
+        layout-check.html?module=./vendor.js&export=buildVendor&opts={"hat":true}
+
+     2. Named presets: create layout-check.config.js next to this file:
+        export const scenes = {
+          piazza: { module: './house-builder.js', export: 'buildPiazzaMercato', opts: {} },
+        };
+        export const defaultScene = 'piazza';
+        ...then open layout-check.html?scene=piazza (or with no params at all).
+
+     Builder functions are called as fn(THREE, opts). If yours takes only opts,
+     add &style=opts. If the export is an Object3D rather than a function, it is
+     used as-is. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.184.0/build/three.module.js"
+  }
+}
+</script>
+<style>
+  body { margin: 0; padding: 16px; font: 13px/1.5 ui-monospace, 'Courier New', monospace;
+         background: #f0f0f0; color: #222; }
+  h1 { font-size: 17px; margin: 0 0 2px; }
+  .sub { color: #666; margin: 0 0 12px; }
+  nav { margin-bottom: 12px; }
+  nav a { margin-right: 12px; }
+  .err { background: #fff; border: 1px solid #d99; border-radius: 8px; padding: 12px; white-space: pre-wrap; color: #b02a1e; }
+</style>
+</head>
+<body>
+<h1>Layout check</h1>
+<p class="sub" id="sub">loading…</p>
+<nav id="nav"></nav>
+<div id="out"></div>
+
+<script type="module">
+import * as THREE from 'three';
+import { inspectLayout } from './layout-inspector.js';
+
+const params = new URLSearchParams(location.search);
+const sub = document.getElementById('sub');
+const out = document.getElementById('out');
+
+const fail = (msg) => {
+  sub.textContent = 'error';
+  out.innerHTML = `<div class="err"></div>`;
+  out.firstChild.textContent = msg;
+};
+
+let config = {};
+try { config = await import('./layout-check.config.js'); } catch { /* optional */ }
+
+const scenes = config.scenes || {};
+if (Object.keys(scenes).length) {
+  document.getElementById('nav').innerHTML = 'scene: ' +
+    Object.keys(scenes).map(k => `<a href="?scene=${encodeURIComponent(k)}">${k}</a>`).join('');
+}
+
+const sceneKey = params.get('scene') || (params.get('module') ? null : config.defaultScene || Object.keys(scenes)[0]);
+const preset = sceneKey ? scenes[sceneKey] : null;
+
+if (sceneKey && !preset) {
+  fail(`Unknown scene "${sceneKey}". Available: ${Object.keys(scenes).join(', ') || '(none defined in layout-check.config.js)'}`);
+} else {
+  const modulePath = params.get('module') || preset?.module;
+  const exportName = params.get('export') || preset?.export || 'default';
+  const callStyle = params.get('style') || preset?.style || 'three-first';
+  let opts = preset?.opts ?? {};
+  const optsParam = params.get('opts');
+  if (optsParam) {
+    try { opts = JSON.parse(optsParam); }
+    catch (e) { fail(`Could not parse ?opts= as JSON: ${e.message}`); throw e; }
+  }
+
+  if (!modulePath) {
+    fail('Nothing to inspect.\n\nPass ?module=./your-builder.js&export=buildThing,\nor define scenes in layout-check.config.js next to this file.');
+  } else {
+    try {
+      sub.textContent = `${modulePath} → ${exportName}${sceneKey ? `  (scene: ${sceneKey})` : ''}`;
+      const mod = await import(modulePath);
+      const entry = mod[exportName];
+      if (entry === undefined) {
+        throw new Error(`Module "${modulePath}" has no export "${exportName}". Exports: ${Object.keys(mod).join(', ')}`);
+      }
+      const object = typeof entry === 'function'
+        ? await (callStyle === 'opts' ? entry(opts) : entry(THREE, opts))
+        : entry;
+      if (!object || !object.isObject3D) {
+        throw new Error(`Expected an Object3D, got ${object === null ? 'null' : typeof object}.`);
+      }
+
+      const result = inspectLayout(THREE, object, {
+        mount: out,
+        groundY: Number(params.get('groundY') ?? preset?.groundY ?? 0),
+        epsilon: Number(params.get('epsilon') ?? preset?.epsilon ?? 0.02),
+        unit: params.get('unit') || preset?.unit || 'm',
+        size: Number(params.get('size') ?? 420),
+        title: sceneKey || exportName,
+      });
+
+      // For automation: read this instead of screenshotting, if you prefer.
+      window.__layoutReport = {
+        scene: sceneKey || exportName,
+        overlaps: result.overlaps,
+        grounding: result.grounding,
+        entries: result.entries.map(e => ({
+          name: e.name,
+          position: e.position.toArray(),
+          size: e.size.toArray(),
+          min: e.box.min.toArray(),
+          max: e.box.max.toArray(),
+        })),
+      };
+    } catch (err) {
+      fail(String(err.stack || err));
+      console.error(err);
+    }
+  }
+}
+</script>
+</body>
+</html>
