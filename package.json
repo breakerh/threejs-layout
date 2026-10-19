@@ -1,0 +1,7 @@
+{
+  "name": "threejs-layout-skill",
+  "private": true,
+  "type": "module",
+  "scripts": {"test": "node --test"},
+  "devDependencies": {"three": "0.186.1"}
+}

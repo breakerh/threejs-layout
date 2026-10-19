@@ -33,7 +33,7 @@ most placement bugs are prevented there rather than found by the tool.
 ## Assets
 
 Both scripts are dependency-free and take your `THREE` namespace as an argument,
-so they work with importmaps, bundlers, or CDN builds, at any version.
+so they work with importmaps, bundlers, or CDN builds without a second runtime copy of Three.js. Verify the installed version's bounds/animation APIs; regression tests pin a current Three.js development dependency.
 
 | File | What it is |
 |---|---|
@@ -108,3 +108,13 @@ Two caveats worth remembering: boxes are axis-aligned, so a rotated object's box
 is a slightly loose envelope — small overlaps there mean "check", not "broken".
 And on a single composed model (a figure, a building) ignore the overlap list
 entirely; read the views for silhouette, proportion, and symmetry instead.
+
+## Transformed parents, React and model imports
+
+Ground heights and corrections use world space; retain `position` as local and read `worldPosition` for world-origin intent. Helpers update ancestor matrices and convert corrections through the parent transform. Do not add a measured world delta straight to local `position.y` yourself.
+
+Use `precise: true` for tighter vertex bounds and `filter(child)` for semantic direct-child selection. Export reports with `serializeLayout(report)` or an inspector's `toJSON()`; raw entries contain live scene references. UUID fields distinguish duplicate names.
+
+For React Three Fiber, cached GLTFs, skeletons, dynamic appearances or demand-rendered scenes, read [references/react-integration.md](references/react-integration.md). Create inspectors only after scene readiness, remove their panel with `dispose()` on cleanup, and refresh for relevant geometry/pose changes. Never dispose shared model resources just to remove an inspector.
+
+Classifications are broad-phase heuristics, not proof of mesh collision, intentional containment, grounding, walkability or support on a bed. Hidden descendants contribute to Box3 bounds. Verify surface contact and behavior in the real rendered scene.

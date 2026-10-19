@@ -105,6 +105,7 @@ if (sceneKey && !preset) {
         mount: out,
         groundY: Number(params.get('groundY') ?? preset?.groundY ?? 0),
         epsilon: Number(params.get('epsilon') ?? preset?.epsilon ?? 0.02),
+        precise: params.get('precise') === 'true' || preset?.precise === true,
         unit: params.get('unit') || preset?.unit || 'm',
         size: Number(params.get('size') ?? 420),
         title: sceneKey || exportName,
@@ -117,7 +118,9 @@ if (sceneKey && !preset) {
         grounding: result.grounding,
         entries: result.entries.map(e => ({
           name: e.name,
+          id: e.id,
           position: e.position.toArray(),
+          worldPosition: e.worldPosition.toArray(),
           size: e.size.toArray(),
           min: e.box.min.toArray(),
           max: e.box.max.toArray(),

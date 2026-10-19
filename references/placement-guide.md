@@ -89,8 +89,7 @@ number means the footprints already intrude on each other.
   floating and sinking obvious at a glance, and lets you compare heights between
   objects that a top view cannot distinguish at all.
 
-Boxes are drawn from real world-space AABBs, so what you see is what the renderer
-will do. An AABB is axis-aligned, though: a rotated object's box is its
+Boxes are drawn from real world-space AABBs, not the rendered silhouette or collision mesh. An AABB is axis-aligned: a rotated object's box is its
 *envelope*, slightly larger than the object. Treat small overlaps on rotated
 objects as "check it", not "definitely broken".
 
@@ -114,6 +113,8 @@ which is exactly the case a footprint-only check gets wrong.
   level but its geometry doesn't touch the ground. Real bug.
 - **floating, not `likelyBug`** — deliberately elevated (a roof, a hanging sign)
   or geometry with a baked offset. Normally fine.
+
+These are hypotheses from broad-phase bounds and an origin/gap heuristic. A `nested` or `concentric` label does not prove containment is intended, and an off-ground object without `likelyBug` can still be wrong. Concave cavities, current skinned poses and actual support surfaces need more specific measurement and a rendered review. Local `position` is retained for compatibility; `worldPosition` is the origin used by world-ground intent checks.
 
 ## Fixing an overlap
 

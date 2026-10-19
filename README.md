@@ -34,6 +34,12 @@ Three.js Layout replaces guess-and-check placement with:
 
 ## Install the skill
 
+For agents that support the shared skills directory:
+
+```bash
+git clone https://github.com/breakerh/threejs-layout.git ~/.agents/skills/threejs-layout
+```
+
 Clone the repository into your agent's skills directory. For Claude Code:
 
 ```bash
@@ -190,3 +196,47 @@ more meaningful.
   misleading; the measured diagrams remain authoritative.
 - The tools diagnose layout but do not replace visual review of the rendered
   scene.
+
+## Transforms, precise bounds and automation
+
+Measurements refresh ancestor transforms, retain the original local `position`, and additionally expose `worldPosition` and object UUID `id`. Ground height and helper corrections are in **world space**. `snapToGround` and `stackOn` convert the correction through the parent's transform, including rotated/nonuniformly scaled parents; a singular parent is rejected instead of silently moving the object incorrectly.
+
+```js
+const report = analyzeLayout(THREE, root, {
+  precise: true,
+  filter: child => child.userData.layoutEntity === true,
+});
+const data = serializeLayout(report); // JSON-safe; no live Object3D references
+```
+
+Import `serializeLayout` from `scene-layout.js`. `precise` uses Three.js's precise vertex measurement when supported by the object's type. It costs more and still does not establish triangle-level collision, walkability, support contact or cavity boundaries. The filter selects direct children; hidden descendants remain part of Three.js bounds. Skeleton/animation matrices and instance bounds must reflect the pose being inspected.
+
+Classification and grounding are heuristics. `nested`, `concentric` or a low `likelyBug` score do not prove an intersection or elevation is intended. Use identity (`id`, `aId`, `bId`) when objects have duplicate names. `clearanceXZ` is a signed axis clearance between AABBs, not an exact Euclidean distance between meshes.
+
+## React Three Fiber lifecycle
+
+Run the inspector after an entity/asset is ready and clean up its panel on unmount or diagnostic refresh:
+
+```jsx
+useEffect(() => {
+  if (!ref.current) return;
+  const inspector = inspectLayout(THREE, ref.current, { precise: true });
+  const report = inspector.toJSON();
+  window.__layoutReport = report;
+  return () => {
+    inspector.dispose();
+    if (window.__layoutReport === report) delete window.__layoutReport;
+  };
+}, [assetReady, diagnosticRevision]);
+```
+
+`dispose()` removes only the inspector's panel; it does not dispose the scene's shared geometries, materials or textures. React owns its scene objects: use inspection helpers to derive source transforms rather than mutating R3F-owned objects during render. Reinspect when the relevant pose/geometry revision changes, not on every simulation snapshot. Read [the React/asset integration notes](references/react-integration.md).
+
+## Tests
+
+```sh
+npm ci
+npm test
+```
+
+The runtime modules still receive `THREE` from the caller and have no package dependency. The pinned Three.js development dependency exercises ancestor updates, rotated/scaled placement, different-parent stacking, world grounding, precise selection, JSON serialization and singular-transform failures.
