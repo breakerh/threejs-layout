@@ -1,7 +1,7 @@
 // Layout measurement & validation for any Three.js scene graph.
 //
 // Zero dependencies: you pass your own THREE namespace in, so this works with
-// importmaps, bundlers, CDN builds, any version — nothing here imports 'three'.
+// importmaps, bundlers and CDN builds — nothing here imports 'three'.
 //
 //   import { measureLayout, checkOverlaps, checkGrounding } from './scene-layout.js';
 //   const entries = measureLayout(THREE, myGroup);
@@ -13,18 +13,21 @@
 // World-space AABB of every direct child of `root`. One entry per object you
 // actually placed — not per mesh — which is the level you reason about when
 // positioning things.
-export function measureLayout(THREE, root, { includeUnnamed = true } = {}) {
-  root.updateMatrixWorld(true);
+export function measureLayout(THREE, root, { includeUnnamed = true, precise = false, filter = () => true } = {}) {
+  root.updateWorldMatrix(true, true);
   const entries = [];
   root.children.forEach((child, i) => {
+    if (!filter(child)) return;
     const name = child.name || (includeUnnamed ? `${child.type}#${i}` : null);
     if (!name) return;
-    const box = new THREE.Box3().setFromObject(child);
+    const box = new THREE.Box3().setFromObject(child, precise);
     if (box.isEmpty()) return;
     entries.push({
       name,
+      id: child.uuid,
       object: child,
       position: child.position.clone(),
+      worldPosition: child.getWorldPosition(new THREE.Vector3()),
       rotationY: child.rotation.y,
       box,
       size: box.getSize(new THREE.Vector3()),
@@ -94,6 +97,8 @@ export function checkOverlaps(entries, { epsilon = 0.02, stackedVerticalRatio = 
       results.push({
         a: a.name,
         b: b.name,
+        aId: a.id,
+        bId: b.id,
         kind,
         overlap,
         footprintRatio,
@@ -124,10 +129,11 @@ export function checkGrounding(entries, { groundY = 0, epsilon = 0.02, likelyBug
   for (const e of entries) {
     const gap = e.box.min.y - groundY;
     if (Math.abs(gap) <= epsilon) continue;
-    const placedOnGround = Math.abs(e.position.y - groundY) <= epsilon;
+    const placedOnGround = Math.abs((e.worldPosition || e.position).y - groundY) <= epsilon;
     const status = gap > 0 ? 'floating' : 'sunken';
     results.push({
       name: e.name,
+      id: e.id,
       status,
       gap,
       placedOnGround,
@@ -152,22 +158,38 @@ export function clearanceXZ(a, b) {
 // correction applied, which is the number you fold back into the source
 // literal rather than leaving this call in production code.
 export function snapToGround(THREE, object, groundY = 0) {
-  object.updateMatrixWorld(true);
+  object.updateWorldMatrix(true, true);
   const box = new THREE.Box3().setFromObject(object);
   const delta = groundY - box.min.y;
-  object.position.y += delta;
+  translateWorldY(THREE, object, delta);
   return delta;
 }
 
 // Rest an object on top of another, with an optional gap.
 export function stackOn(THREE, object, target, gap = 0) {
-  object.updateMatrixWorld(true);
-  target.updateMatrixWorld(true);
+  object.updateWorldMatrix(true, true);
+  target.updateWorldMatrix(true, true);
   const objBox = new THREE.Box3().setFromObject(object);
   const targetBox = new THREE.Box3().setFromObject(target);
   const delta = (targetBox.max.y + gap) - objBox.min.y;
-  object.position.y += delta;
+  translateWorldY(THREE, object, delta);
   return delta;
+}
+
+// A world-space correction is not a local position.y increment when the
+// parent is scaled or rotated. Convert the desired world origin back to local.
+function translateWorldY(THREE, object, delta) {
+  const origin = object.getWorldPosition(new THREE.Vector3());
+  origin.y += delta;
+  if (object.parent) {
+    if (Math.abs(object.parent.matrixWorld.determinant()) < 1e-12) {
+      throw new Error('Cannot place an object under a non-invertible parent transform');
+    }
+    object.parent.worldToLocal(origin);
+  }
+  object.position.copy(origin);
+  object.updateMatrix();
+  object.updateWorldMatrix(false, true);
 }
 
 // Everything at once — handy when wiring this into a page or a test.
@@ -177,5 +199,19 @@ export function analyzeLayout(THREE, root, opts = {}) {
     entries,
     overlaps: checkOverlaps(entries, opts),
     grounding: checkGrounding(entries, opts),
+  };
+}
+
+// Raw entries deliberately retain live Object3D references. Export only the
+// measured data for browser automation, logs and reproducible assertions.
+export function serializeLayout(report) {
+  return {
+    entries: report.entries.map(({ name, id, position, worldPosition, rotationY, box, size, center }) => ({
+      name, id, position: position.toArray(), worldPosition: (worldPosition || position).toArray(),
+      rotationY, box: { min: box.min.toArray(), max: box.max.toArray() },
+      size: size.toArray(), center: center.toArray(),
+    })),
+    overlaps: report.overlaps.map(entry => ({ ...entry })),
+    grounding: report.grounding.map(entry => ({ ...entry })),
   };
 }

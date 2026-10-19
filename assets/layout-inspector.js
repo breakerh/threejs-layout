@@ -10,7 +10,7 @@
 //
 // No renderer, no canvas context loss, no interference with your scene — this
 // is pure Box3 math drawn onto 2D canvases.
-import { measureLayout, checkOverlaps, checkGrounding } from './scene-layout.js';
+import { measureLayout, checkOverlaps, checkGrounding, serializeLayout } from './scene-layout.js';
 
 const VIEWS = [
   { key: 'top',   label: 'Top (X / Z)',   axisH: 'x', axisV: 'z', flipV: false, ground: false },
@@ -100,7 +100,7 @@ function reportHTML({ entries, overlaps, grounding, unit }) {
   out.push(`<p>${entries.length} objects measured. Sizes in ${esc(unit)}.</p>`);
 
   if (!colliding.length) {
-    out.push(`<p class="ok">&#10003; No unexplained collisions between objects.</p>`);
+    out.push(`<p class="ok">&#10003; No AABB pairs classified as colliding. This is a broad-phase check, not a mesh collision test.</p>`);
   } else {
     out.push(`<p class="bad">&#9888; ${colliding.length} colliding pair(s) &mdash; independently placed objects that clash:</p><ul>`);
     for (const o of colliding) {
@@ -118,7 +118,7 @@ function reportHTML({ entries, overlaps, grounding, unit }) {
   }
 
   if (!bugs.length) {
-    out.push(`<p class="ok">&#10003; Everything placed at ground level actually touches the ground.</p>`);
+    out.push(`<p class="ok">&#10003; No likely ground-contact issues detected under the current origin/gap heuristic.</p>`);
   } else {
     out.push(`<p class="bad">&#9888; ${bugs.length} object(s) placed at ground level but not resting on it:</p><ul>`);
     for (const g of bugs) {
@@ -128,7 +128,7 @@ function reportHTML({ entries, overlaps, grounding, unit }) {
   }
 
   if (elevated.length) {
-    out.push(`<details><summary>${elevated.length} object(s) off the ground on purpose (or with geometry-baked offsets)</summary><ul>`);
+    out.push(`<details><summary>${elevated.length} other off-ground object(s); review elevation and baked offsets</summary><ul>`);
     for (const g of elevated) {
       out.push(`<li>${esc(g.name)} &mdash; ${g.status}, ${fmt(Math.abs(g.gap))} ${g.status === 'floating' ? 'above' : 'below'} ground${g.placedOnGround ? ' (position.y is 0 &mdash; likely a baked geometry offset)' : ''}</li>`);
     }
@@ -175,6 +175,9 @@ const PANEL_CSS = `
  */
 export function inspectLayout(THREE, root, opts = {}) {
   const { mount, groundY = 0, unit = 'm', size = 420, views = ['top', 'front', 'side'], title } = opts;
+  if (!Array.isArray(views) || views.some(key => !VIEWS.some(view => view.key === key))) {
+    throw new Error('views must contain only top, front or side');
+  }
 
   const entries = measureLayout(THREE, root, opts);
   const overlaps = checkOverlaps(entries, opts);
@@ -212,5 +215,9 @@ export function inspectLayout(THREE, root, opts = {}) {
     drawView(panel.querySelector(`canvas[data-view="${key}"]`), entries, view, { groundY, highlight });
   }
 
-  return { entries, overlaps, grounding, element: panel };
+  return {
+    entries, overlaps, grounding, element: panel,
+    toJSON: () => serializeLayout({ entries, overlaps, grounding }),
+    dispose: () => panel.remove(),
+  };
 }
