@@ -105,7 +105,7 @@ if (sceneKey && !preset) {
         mount: out,
         groundY: Number(params.get('groundY') ?? preset?.groundY ?? 0),
         epsilon: Number(params.get('epsilon') ?? preset?.epsilon ?? 0.02),
-        precise: params.get('precise') === 'true' || preset?.precise === true,
+        precise: params.has('precise') ? params.get('precise') === 'true' : preset?.precise === true,
         unit: params.get('unit') || preset?.unit || 'm',
         size: Number(params.get('size') ?? 420),
         title: sceneKey || exportName,

@@ -63,3 +63,49 @@ test('singular parent transforms fail without moving the object', () => {
   const before = object.position.clone();
   assert.throws(() => snapToGround(THREE, object), /non-invertible/); assert.ok(object.position.equals(before));
 });
+
+
+test('small invertible parents support ground snapping and stacking', () => {
+  const parent = new THREE.Group(), object = cube(), target = cube();
+  parent.scale.setScalar(1e-5); parent.rotation.z = .3; parent.add(object);
+  object.position.set(2, 5, 3);
+  snapToGround(THREE, object, .25);
+  close(new THREE.Box3().setFromObject(object).min.y, .25);
+  target.position.y = 2;
+  stackOn(THREE, object, target, .1);
+  close(new THREE.Box3().setFromObject(object).min.y, 2.6);
+});
+
+test('non-finite parent transforms fail without changing local position', () => {
+  const parent = new THREE.Group(), object = cube(); parent.add(object);
+  parent.scale.x = Infinity;
+  const before = object.position.clone();
+  assert.throws(() => snapToGround(THREE, object), /non-invertible/);
+  assert.ok(object.position.equals(before));
+});
+
+test('harness query overrides precise preset in both directions', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const html = await readFile(new URL('../assets/layout-check.html', import.meta.url), 'utf8');
+  const source = html.match(/<script type="module">([\s\S]*?)<\/script>/)[1]
+    .replace(/^import .*;$/gm, '')
+    .replace(/await import\(/g, 'await load(');
+  const run = new (Object.getPrototypeOf(async function () {}).constructor)(
+    'THREE', 'inspectLayout', 'location', 'document', 'window', 'load', source);
+  for (const [query, preset, expected] of [
+    ['', true, true], ['', false, false], ['&precise=false', true, false],
+    ['&precise=true', false, true], ['', undefined, false],
+  ]) {
+    let options;
+    const element = { textContent: '', innerHTML: '' };
+    const object = cube();
+    await run(THREE, (_three, _object, opts) => {
+      options = opts;
+      return { entries: [], overlaps: [], grounding: [] };
+    }, { search: '?scene=fixture' + query }, { getElementById: () => element }, {},
+    async path => path.endsWith('config.js')
+      ? { scenes: { fixture: { module: './fixture.js', precise: preset } } }
+      : { default: object });
+    assert.equal(options.precise, expected);
+  }
+});

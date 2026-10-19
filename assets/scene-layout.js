@@ -182,7 +182,8 @@ function translateWorldY(THREE, object, delta) {
   const origin = object.getWorldPosition(new THREE.Vector3());
   origin.y += delta;
   if (object.parent) {
-    if (Math.abs(object.parent.matrixWorld.determinant()) < 1e-12) {
+    const determinant = object.parent.matrixWorld.determinant();
+    if (determinant === 0 || !Number.isFinite(determinant)) {
       throw new Error('Cannot place an object under a non-invertible parent transform');
     }
     object.parent.worldToLocal(origin);
